@@ -14,7 +14,7 @@ def _utf8_open(f, mode="r", *a, **k):
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
 # ──────────────────────────────────────────────────────────────────
-import json, subprocess, sys, os
+import json, subprocess, sys, os, shutil
 W=os.path.abspath(sys.argv[1]); SRC=os.path.join(W,"src.mov")
 k=json.load(open(os.path.join(W,"cut.json")))["keep"]
 _tp=os.path.join(W,"theme.json")
@@ -31,29 +31,46 @@ p=subprocess.run(["ffprobe","-v","error","-select_streams","v:0","-show_entries"
    "stream=width,height","-of","csv=p=0:s=x",SRC],capture_output=True,text=True).stdout.strip()
 SW,SH=[int(x) for x in p.split("x")[:2]]
 fc=[];v=[];a=[]
-zi=0; held=0.0
+zi=0; held=0.0; ZS=[]
 for i,(s,e) in enumerate(k):
     # بالوضع الهادي: نفس الزوم يستمر لين تتجمّع 4 ثوانٍ، ثم ينتقل للي بعده
     if i and (not CALM or held>=MINHOLD): zi+=1; held=0.0
-    held+=(e-s)
-    z=Z[zi%len(Z)]; cw=int(SW/z)//2*2; ch=int(SH/z)//2*2
-    x=(SW-cw)//2; y=int((SH-ch)*ANCH)
-    fc.append(f"[0:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{x}:{y},"
+    held+=(e-s); ZS.append(Z[zi%len(Z)])
+# 🆕 v3.5 فيديو بالعرض (مقابلة · بودكاست · حلقة): كان يتمطّ لـ9:16 — الحين قصّ بالطول حول الوجه لكل لقطة
+#    (بلاغ ٢٧ سبتمبر على ريلات المقابلة). الفيديو الطولي يمشي على نفس الطريق القديم بالضبط.
+if SW/SH > 0.62:
+    sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
+    import _landscape
+    PIECES=_landscape.plan(SRC,W,k,SW,SH,ZS,ANCH)
+    # مقابلة ساعة: بدل ما يفك الفيديو من أوله، يبدأ من قبل أول مقطع بثانية (نفس الفريمات بالضبط)
+    T0=max(0.0,min(s for s,e,_ in PIECES)-1.0); T1=max(e for s,e,_ in PIECES)+1.0
+    PIECES=[(s-T0,e-T0,c) for s,e,c in PIECES]
+    SEEK=["-ss",f"{T0:.3f}","-to",f"{T1:.3f}"]
+else:
+    PIECES=[]; SEEK=[]
+    for (s,e),z in zip(k,ZS):
+        cw=int(SW/z)//2*2; ch=int(SH/z)//2*2
+        x=(SW-cw)//2; y=int((SH-ch)*ANCH)
+        PIECES.append((s,e,f"crop={cw}:{ch}:{x}:{y}"))
+for i,(s,e,crop) in enumerate(PIECES):
+    fc.append(f"[0:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS,{crop},"
               f"scale=1080:1920:flags=lanczos,setsar=1[v{i}]")
     fc.append(f"[0:a]atrim=start={s:.4f}:end={e:.4f},asetpts=PTS-STARTPTS[a{i}]")
     v.append(f"[v{i}]"); a.append(f"[a{i}]")
-fc.append("".join(v)+f"concat=n={len(k)}:v=1:a=0[vc]")
-fc.append("".join(a)+f"concat=n={len(k)}:v=0:a=1[ac]")
+fc.append("".join(v)+f"concat=n={len(PIECES)}:v=1:a=0[vc]")
+fc.append("".join(a)+f"concat=n={len(PIECES)}:v=0:a=1[ac]")
 # التدرّج اللوني اختياري تماماً — الافتراضي مطفي (الفيديو يطلع بألوانه الأصلية)
 _g = ("eq=brightness=0.015:saturation=0.96:contrast=1.05,"
-      "colorbalance=rs=0.02:gs=0.005:bs=-0.02,") if GRADE else ""
+      "colorbalance=rs=0.02:gs=0.005:bs=-0.02,") if GRADE is True else ""
+# 🔬 v3.9 "grade":"auto" → يتحسب تحت بعد تحويل HDR (نقيس الصورة اللي بتنقص فعلاً)
+if GRADE == "auto": _g = "__AUTOGRADE__"
 # ⚠️ مصدر آيفون HDR يجي موسوماً bt2020/HLG — أي متصفح يحترم الوسم ويطلّع صورة برتقالية.
 # setparams يعيد الوسم لـbt709 فتطلع الألوان طبيعية بكل مكان.
 fc.append("[vc]fps=30," + _g +
           "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,format=yuv420p[vo]")
-print("التدرّج اللوني:", "مفعّل" if GRADE else "مطفي (ألوان أصلية)")
+print("التدرّج اللوني:", {True: "مفعّل", "auto": "تصحيح مقاس"}.get(GRADE, "مطفي (ألوان أصلية)"))
 fc.append("[ac]afade=t=in:st=0:d=0.06,dynaudnorm=f=200:g=5:p=0.9[ao]")
-# 🎨 8 سبتمبر: «صفر تعديل لوني». فيديو الآيفون يجي HDR (HLG/Dolby Vision) وتحويله الساذج لـSDR يغيّر الألوان
+# 🎨 (8 سبتمبر): «صفر تعديل لوني». فيديو الآيفون يجي HDR (HLG/Dolby Vision) وتحويله الساذج لـSDR يغيّر الألوان
 #    (باهت وبارد) — نحوّله بمكتبة أبل نفسها (AVFoundation) قبل أي شي، فيطلع بنفس مظهره على الجوال.
 def _hdr_to_sdr(src):
     try:
@@ -61,16 +78,38 @@ def _hdr_to_sdr(src):
     except Exception: return src
     if ct not in ("arib-std-b67","smpte2084"): return src
     here=os.path.dirname(os.path.abspath(__file__)); binp=os.path.join(here,"hdr2sdr")
-    if not os.path.exists(binp):
-        r=subprocess.run(["swiftc","-O","-o",binp,os.path.join(here,"hdr2sdr.swift")],capture_output=True)
-        if r.returncode!=0: print("⚠️ الفيديو HDR وما قدرت أبني محوّل أبل (يحتاج أدوات Xcode) — الألوان قد تختلف"); return src
     out=os.path.join(W,"src_sdr.mov")
+    if os.name != "nt" and shutil.which("swiftc"):
+        if not os.path.exists(binp):
+            r=subprocess.run(["swiftc","-O","-o",binp,os.path.join(here,"hdr2sdr.swift")],capture_output=True)
+            if r.returncode!=0: print("⚠️ الفيديو HDR وما قدرت أبني محوّل أبل (يحتاج أدوات Xcode) — الألوان قد تختلف"); return src
+        if not os.path.exists(out):
+            print("🎨 الفيديو HDR — أحوّله SDR بمحوّل أبل حتى تبقى الألوان مثل الجوال…")
+            r=subprocess.run([binp,src,out])
+            if r.returncode!=0 or not os.path.exists(out): print("⚠️ فشل التحويل — أكمل بالأصل"); return src
+        return out
+    # ويندوز (أو بلا Xcode): تحويل HDR→SDR بـffmpeg (zscale+tonemap) — تقريب لمحوّل أبل
     if not os.path.exists(out):
-        print("🎨 الفيديو HDR — أحوّله SDR بمحوّل أبل حتى تبقى الألوان مثل الجوال…")
-        r=subprocess.run([binp,src,out]); 
+        print("🎨 الفيديو HDR — أحوّله SDR بـffmpeg (tonemap)…")
+        vf=("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
+            "tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
+        r=subprocess.run(["ffmpeg","-v","error","-i",src,"-vf",vf,"-c:v","libx264","-preset","fast","-crf","14","-c:a","copy","-y",out])
         if r.returncode!=0 or not os.path.exists(out): print("⚠️ فشل التحويل — أكمل بالأصل"); return src
     return out
 SRC=_hdr_to_sdr(SRC)
-sys.exit(subprocess.call(["ffmpeg","-v","error","-stats","-i",SRC,"-filter_complex",";".join(fc),
+if GRADE == "auto":   # بموافقته بعد فحص 25_scopes.py: يصحّح بس المشكلة المقاسة (غامج · مايل · باهت)
+    _sp = os.path.join(W, "scopes.json")
+    if not os.path.exists(_sp):
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "25_scopes.py"), W])
+    _fix = json.load(open(_sp)).get("fix", "") if os.path.exists(_sp) else ""
+    fc = [x.replace("__AUTOGRADE__", (_fix + ",") if _fix else "") for x in fc]
+    print("التصحيح المقاس:", _fix or "ما يحتاج — الصورة سليمة")
+_OUT=os.path.join(W,"cutz.mp4")
+print(f"✂️  أقص وأركّب {len(k)} مقطعاً… (بلا عدّاد — سطر واحد بالنهاية)", flush=True)
+_rc=subprocess.call(["ffmpeg","-v","error","-nostats",*SEEK,"-i",SRC,"-filter_complex",";".join(fc),
  "-map","[vo]","-map","[ao]","-c:v","libx264","-preset","medium","-crf","16",
- "-c:a","aac","-b:a","192k","-movflags","+faststart","-y",os.path.join(W,"cutz.mp4")]))
+ "-c:a","aac","-b:a","192k","-movflags","+faststart","-y",_OUT])
+if _rc==0:
+    _d=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",_OUT],capture_output=True,text=True).stdout.strip()
+    print(f"✅ cutz.mp4 — {float(_d or 0):.2f} ث · {len(k)} مقطع")
+sys.exit(_rc)
