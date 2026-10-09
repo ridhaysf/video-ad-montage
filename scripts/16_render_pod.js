@@ -14,7 +14,7 @@ const faces={}; for(const c of cams.cams) faces[c.id]=c.faces;
 if(theme.fontFiles) theme.fontFiles=theme.fontFiles.map(f=>({...f,src:url(path.resolve(W,f.src))}));
 if(theme.logo) theme.logo=url(path.resolve(W,theme.logo));
 function findChrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium']) if(fs.existsSync(c)) return c; throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
+  for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', (process.env.ProgramFiles || 'C:/Program Files') + '/Google/Chrome/Application/chrome.exe', (process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)') + '/Google/Chrome/Application/chrome.exe', (process.env.LOCALAPPDATA || '') + '/Google/Chrome/Application/chrome.exe', (process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)') + '/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome','/usr/bin/chromium']) if(fs.existsSync(c)) return c; throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
 function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),SC+'../node_modules/puppeteer-core']){ if(!p) continue; try{return require(p);}catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
 (async()=>{
   const puppeteer=pupp(); const mode=process.argv[3]||'all';
@@ -22,6 +22,7 @@ function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','pu
   const p=await b.newPage(); p.on('pageerror',e=>console.log('PAGEERR',e.message));
   await p.setViewport({width:1080,height:1920,deviceScaleFactor:1}); await p.setCacheEnabled(false);
   await p.goto(url(SC+'compose.PODCAST.html'),{waitUntil:'networkidle0'});
+  if(theme.hook) await p.addScriptTag({path:SC+'hook-card.js'});   /* 🪝 v3.8: الهوك المكتوب أول الريل (theme.json ← hook — يكتبه 22_hook.py) */
   await p.evaluate((c,s,o,t,h,f)=>window.init({caps:c,scenes:s,outro:o,theme:t,headbox:h,faces:f}),caps,plan.scenes,OUTRO,theme,behind.headbox||{},faces);
   const FF=theme.font||'Cairo';
   const ok=await p.evaluate(async f=>{ await Promise.all(['400','700'].map(w=>document.fonts.load(w+' 60px '+f))); await document.fonts.ready; return document.fonts.check('700 60px '+f); },FF);

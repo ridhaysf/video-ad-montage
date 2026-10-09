@@ -7,7 +7,7 @@ const path=require('path'),fs=require('fs'),cp=require('child_process');
 const W=path.resolve(process.argv[2])+path.sep, SC=__dirname+path.sep;
 const args=process.argv.slice(3);const li=args.indexOf('--logos');const LOGOS=li>=0?path.resolve(args[li+1])+path.sep:null;if(li>=0)args.splice(li,2);
 const STYLE=(args[0]==='accents')?'accents':'collage';const MODE=args[1]||'all';
-const CHROME=process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME=process.env.CHROME_PATH||['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', (process.env.ProgramFiles || 'C:/Program Files') + '/Google/Chrome/Application/chrome.exe', (process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)') + '/Google/Chrome/Application/chrome.exe', (process.env.LOCALAPPDATA || '') + '/Google/Chrome/Application/chrome.exe', (process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)') + '/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome'].find(p=>p&&fs.existsSync(p));
 function resolvePuppeteer(){for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core')]){if(!p)continue;try{return require(p);}catch(e){}}throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');}
 const sh=(c,opt={})=>cp.execSync(c,{stdio:['ignore','pipe','pipe'],...opt}).toString();
 for(const f of ['cutz.mp4','caps.json','theme.json'])if(!fs.existsSync(W+f)){console.error('ناقص: '+W+f+' — شغّل الخطوات 3-6 أول');process.exit(2);}

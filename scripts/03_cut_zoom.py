@@ -37,7 +37,7 @@ for i,(s,e) in enumerate(k):
     if i and (not CALM or held>=MINHOLD): zi+=1; held=0.0
     held+=(e-s); ZS.append(Z[zi%len(Z)])
 # 🆕 v3.5 فيديو بالعرض (مقابلة · بودكاست · حلقة): كان يتمطّ لـ9:16 — الحين قصّ بالطول حول الوجه لكل لقطة
-#    (بلاغ ٢٧ سبتمبر على ريلات المقابلة). الفيديو الطولي يمشي على نفس الطريق القديم بالضبط.
+#    (بلاغ ماجد ٢٧ سبتمبر على ريلات المقابلة). الفيديو الطولي يمشي على نفس الطريق القديم بالضبط.
 if SW/SH > 0.62:
     sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
     import _landscape
@@ -70,7 +70,7 @@ fc.append("[vc]fps=30," + _g +
           "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,format=yuv420p[vo]")
 print("التدرّج اللوني:", {True: "مفعّل", "auto": "تصحيح مقاس"}.get(GRADE, "مطفي (ألوان أصلية)"))
 fc.append("[ac]afade=t=in:st=0:d=0.06,dynaudnorm=f=200:g=5:p=0.9[ao]")
-# 🎨 (8 سبتمبر): «صفر تعديل لوني». فيديو الآيفون يجي HDR (HLG/Dolby Vision) وتحويله الساذج لـSDR يغيّر الألوان
+# 🎨 ماجد (8 سبتمبر): «صفر تعديل لوني». فيديو الآيفون يجي HDR (HLG/Dolby Vision) وتحويله الساذج لـSDR يغيّر الألوان
 #    (باهت وبارد) — نحوّله بمكتبة أبل نفسها (AVFoundation) قبل أي شي، فيطلع بنفس مظهره على الجوال.
 def _hdr_to_sdr(src):
     try:

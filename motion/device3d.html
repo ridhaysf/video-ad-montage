@@ -18,7 +18,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const C = window.CFG;                       // يحقنه 31_device3d.js
-const RF = C.reflect ?? 0.25;               // قوة الانعكاس 0-1 (طلب : خففها، التركيز على الشاشة)
+const RF = C.reflect ?? 0.25;               // قوة الانعكاس 0-1 (طلب ماجد: خففها، التركيز على الشاشة)
 const [W, H] = C.size; const DEV = C.device || 'phone';
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1); renderer.setSize(W, H);

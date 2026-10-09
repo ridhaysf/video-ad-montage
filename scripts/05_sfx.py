@@ -55,7 +55,7 @@ def tick(f=2400,dur=0.03):
     s=np.sin(2*np.pi*f*t)*np.exp(-t/0.006)
     return s/(np.max(np.abs(s))+1e-9)
 W1=whoosh(0.34,True); W2=whoosh(0.30,False); TH=thud(); TP=tap()
-# 🎚️ لوحة أصوات موسّعة (v3.7 — طلب «ابيك تبدع بالمؤثرات الصوتية»): كل صوت لحدث بصري معيّن، مو رشّ
+# 🎚️ لوحة أصوات موسّعة (v3.7 — طلب ماجد «ابيك تبدع بالمؤثرات الصوتية»): كل صوت لحدث بصري معيّن، مو رشّ
 def riser(dur=1.2):              # صعود قبل الكشف (ينتهي على لحظة الكشف)
     L=int(dur*SR); t=np.arange(L)/SR; y=lp(rng.randn(L),0.02,0.45); y/=np.max(np.abs(y))+1e-9
     tone=np.sin(2*np.pi*np.cumsum(180+900*(t/dur)**2)/SR)*0.35
