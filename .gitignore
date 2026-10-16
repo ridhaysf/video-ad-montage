@@ -1,0 +1,7 @@
+node_modules/
+*.mov
+*.mp4
+.DS_Store
+majed-video.plugin
+!video-ad-editor/motion/moves/previews/*.mp4
+dist/
