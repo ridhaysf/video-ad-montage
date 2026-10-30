@@ -7,6 +7,14 @@
 
 ---
 
+## قبل أي شي — نصيحة الموديل والجهد (مرة وحدة بالجلسة)
+أول رسالة بالجلسة، قل للمستخدم بسطرين (ولا تكررها):
+> «للنتيجة الأقوى: **Opus 5.5** والجهد **max**. يصرف من حدّك أكثر، بس المونتاج يطلع أحسن بوايد.»
+- **بالشات (claude.ai / التطبيق):** من قائمة الموديل جنب زر الإرسال ← Opus 5.5 ← Effort ← Max.
+- **Claude Code (الطرفية، الديسكتوب، تبويب Code بالجوال):** يكتب `/model opus` ثم `/effort max`.
+- لو هو أصلاً على Opus 5.5 (تعرف موديلك) قل الجهد بس. لا تقترح «ultracode» للمونتاج: يقسم الشغل على وكلاء وكل واحد يرسم بذوق، والصرف يتضاعف — وكيل واحد بجهد max أحسن لفيديو واحد.
+- لا تعطي أرقام صرف أو دقائق — ما انقاست.
+
 ## الخطوة 0 — جهّز بصمت
 
 ```bash
@@ -29,6 +37,17 @@ bash scripts/00_setup.sh --install
   - كل وحدة ترجع للطريق القديم لو ناقصة.
 
 جهّز مجلد شغل، وانسخ له `scripts/compose.REFERENCE.html` باسم `compose.html`.
+
+### 💡 نصايح من ريل بوبيان (6.0)
+- **مقاطع آيفون كثيرة (HLG/HDR) تبي تدمجها بفيديو واحد؟ حوّل كل مقطع SDR أول، بعدين ادمج.**
+  `03_cut_zoom.py` يكشف HDR بالملف الواحد بس — الدمج بـffmpeg قبلها يضيّع وسم HLG فتطلع الألوان باهتة/برتقالية بلا ما ينكشف.
+  ```bash
+  swiftc -O -o scripts/hdr2sdr scripts/hdr2sdr.swift          # مرة وحدة (ماك + أدوات Xcode)
+  mkdir -p sdr; for f in IMG_*.MOV; do scripts/hdr2sdr "$f" "sdr/${f%.*}.mov"; done   # كل مقطع لحاله
+  ```
+  تعرف إنه HDR: `ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=p=0 IMG_1.MOV` ← `arib-std-b67` (HLG) أو `smpte2084`.
+- **تنظيف الصوت بكلود كود = DeepFilterNet على الجهاز** (`bash scripts/00_setup.sh --extras` ثم `02b_enhance_audio.sh <work> --local`).
+  أداة أدوبي `media_enhance_speech` تبدأ الشغل بس ما فيه أداة متابعة بكلود كود تجيب الملف النظيف — لا تعتمد عليها هني.
 
 ---
 
@@ -120,10 +139,14 @@ python3 scripts/00_onboard.py onacc <work>
 | `badgeUntil` | شارة الحساب. مطفية (0) — الاسم بالمنصة وبكرت النهاية. `3` = أول 3 ثوانٍ لو طلبها |
 | `grade` | مطفي دايماً — شوف قاعدة «صفر تعديل لوني» |
 | `capStyle` | ستايل الكابشن ← `references/word-fx.md` |
+| `capStill` | `true` = كابشن بلا حركة: الكرت يدخل ويطلع بالشفافية بس، والكلمة ما تقفز ولا تنبض. تلوين الكلمة المنطوقة والكبسولة يبقى. الافتراضي الحركة ← `references/word-fx.md` |
+| `bar` | `false` = بلا شريط التقدّم. الافتراضي ظاهر. (مو `capStyle: "bar"` — هذاك ستايل كابشن) |
 | `pace` | `"calm"` إيقاع هادي ← `references/explainer-and-pace.md` |
 | `hookZoom` | زوم ناعم على وجهه أول الهوك (ثواني = نهاية الهوك). مطفي افتراضاً |
 | `outro` | كرت الختام `{l1,l2,chips,cta,word,sub}` |
 | `hook` | جملة هوك مكتوبة لريلات البودكاست — يكتبها `22_hook.py apply`، لا تكتبه باليد |
+
+**إعلان فخم هادي** (ماجد 17 أكتوبر): `"capStill": true` + `"bar": false`، وأي `FX.doorway` يفتح على وجهه ياخذ `zoomB: false` (بلا زوم على الوجه).
 
 **`hookZoom` بالتفصيل:**
 - بعد الخطوة 6 شغّل `python3 scripts/22b_hook_center.py <work>` — يكتب `hookCenter` على وجهه.

@@ -7,15 +7,37 @@
 const C=document.getElementById('cv'),X=C.getContext('2d');
 const LOGO=document.getElementById('LOGO'), VF=document.getElementById('VF');
 const W=1080,H=1920;
+/* 🔢 اتجاه النص (6.1 — ريل «1000$ بيوم»): الكانفس يرث rtl من الصفحة، فمدى الأرقام ينقلب: «مصوّر 25–30 دينار» تطلع «30–25»
+   (الشرطة بين رقمين تاخذ اتجاه الجملة — حتى «25-30» بعد كلمة عربية)، وكلمة الكابشن «25–30» لحالها نفس الشي، و«(AI)» تنعكس أقواسها.
+   الحل مركزي على fillText/strokeText/measureText — يغطي الكابشن والمشاهد وبنك الحركات وأي كانفس بالصفحة، فلا تلف الأرقام بنفسك:
+     • نص فيه حروف عربية ← يرتسم rtl، وكل رقم/مدى (25–30 · 25 - 30 · 1,000$ · 50%) معزول يسار←يمين بـ\u2066…\u2069
+     • نص بلا حروف عربية (Claude · 25–30 · (AI)) ← يرتسم ltr
+   محاذاة start/end تتحوّل لـright/left على الاتجاه الأصلي — فمكان النص ما يتغيّر، بس ترتيبه يصح. العرض نفسه (علامات العزل بلا عرض). */
+(function(){ const P=CanvasRenderingContext2D.prototype; if(P.__bidiFix) return; P.__bidiFix=true;
+  const AR=/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/, NUM=/[$€£]?[0-9]+(?:(?:[.,:\/]|\s?[\u2013\u2014-]\s?[$€£]?)[0-9]+)*[%٪$]?/g;
+  const dirOf=c=>{ const v=c.canvas; return (v&&v.isConnected&&getComputedStyle(v).direction==='rtl')?'rtl':'ltr'; };   /* 'inherit' (كروم يرجّع المحسوب أصلاً) */
+  const wrap=name=>{ const f=P[name]; P[name]=function(s,...a){
+    s=String(s); const ar=AR.test(s); if(ar&&/[0-9]/.test(s)) s=s.replace(NUM,'\u2066$&\u2069');
+    const want=ar?'rtl':'ltr', d0=this.direction, cur=d0==='inherit'?dirOf(this):d0;
+    if(cur===want) return f.call(this,s,...a);
+    const al=this.textAlign; this.direction=want; if(al==='start'||al==='end') this.textAlign=(al==='start')===(cur==='rtl')?'right':'left';
+    try{ return f.call(this,s,...a); }finally{ this.direction=d0; this.textAlign=al; } }; };
+  ['fillText','strokeText','measureText'].forEach(wrap); })();
 /* ── الألوان والخط تجي من theme.json — لا تكتب لوناً ثابتاً هني ── */
 let BG='#F3EFEA',INK='#1F1F1D',ACC='#D97757',CLAY='#BD5D3A',MUT='#8A847A',FONT='Cairo',HANDLE='@handle';
 let CARD_TOP=null, CARD_ZOOM=1;   /* studio.json ← cardTop (23_headcrop.py) · theme.json ← cardZoom */
 let FACE_ANCH=0.30;   /* أين يقع وجه المتحدث داخل كرت الفيديو: 0 = فوق · 1 = تحت (theme.json ← faceAnchor) */
 let GRID=true;        /* شبكة خفيفة بالخلفية (theme.json ← grid:false يوقفها) */
+let CAP_STILL=false;  /* كابشن بلا حركة (theme.json ← capStill:true — ماجد 17 أكتوبر، إعلان فخم): الكرت يدخل ويطلع بالشفافية بس،
+                         والكلمة ما تقفز ولا تنبض. تلوين الكلمة المنطوقة والكبسولة يبقى. الافتراضي = الحركة كما هي */
+let BAR=true;         /* شريط التقدّم (theme.json ← bar:false يشيله) */
 let BADGE_UNTIL=0;    /* ⛔ شارة الحساب مطفية (قرار ماجد ٢ سبتمبر): اسمه ظاهر بالمنصة نفسها
                          وبكرت النهاية، وفوق الشاشة مساحة للرسم. theme.json ← badgeUntil:3 تعيدها */
 let CAPS=[],VEND=0,OUTRO=0,DUR=0;
 let THEME_RAW=null;
+/* 6.1: motion-kit.js (وأي سكربت خارجي) يقرأ الكانفس وألوان الثيم من window — و const/let العامة ما تصير خصائص window،
+   فكان MK.* يطيح («reading 'save'») أو يرسم بألوان افتراضية، وكل مشروع يرقّعها بسطر بمشاهده. الحين تنقرا مباشرة (وتتحدّث مع init) */
+['X','BG','INK','ACC','CLAY','MUT','FONT'].forEach(n=>{ try{ Object.defineProperty(window,n,{get:new Function('return '+n),configurable:true}); }catch(e){} });
 function init(d){
   CAPS=d.cards;VEND=d.total;OUTRO=d.outro;DUR=VEND+OUTRO;
   BEHIND=d.behind||null;
@@ -29,6 +51,8 @@ function init(d){
   if(typeof t.badgeUntil==='number') BADGE_UNTIL=t.badgeUntil;
   if(typeof t.badge==='boolean') BADGE_UNTIL=t.badge?3:0;   /* توافق: مشاريع كتبت badge:false */
   if(typeof t.grid==='boolean') GRID=t.grid;
+  if(typeof t.capStill==='boolean') CAP_STILL=t.capStill;
+  if(typeof t.bar==='boolean') BAR=t.bar;
   if(typeof t.hookZoom==='number') HOOK_END=t.hookZoom;
   if(t.outro){ OUTRO_T={...OUTRO_T,...t.outro}; if(Array.isArray(t.outro.chips)) RECAP=t.outro.chips.map(c=>[c]); }   /* v3.5: كرت الختام من الثيم (الافتراضي إعلان السكل — ريل بودكاست لازم يغيّره) */   /* زوم الهوك + انتقال بعده (ثواني) — شوف hookZoom تحت */
   if(t.logo){const L=document.getElementById('LOGO'); if(L.getAttribute('src')!==t.logo) L.src=t.logo;}
@@ -105,7 +129,7 @@ let BROLL=[];   /* لقطات بي-رول من الاستوديو: {k,s,e,mode:'
      • 'video'   → تنرسم مباشرة بعد الفيديو (لمؤثر يشتغل على صورة الفيديو نفسها مثل القليتش)
    طريقتان للتسجيل:
      1) بـcompose.html مشروعك (تحت هذا السكربت أو بآخره):
-          function myPanel(t){ if(t<4.2||t>7.8) return; panelIn(t,4.2,7.8,()=>{ … }); }
+          function myPanel(t){ if(t<4.2||t>7.8) return; panelIn(t,4.2,7.8,()=>{ … }); }   // 7.8 = آخر كلمة + 0.45 — تقعد بعد صوته وتطلع بهدوء
           SCENE_LIST.push(['myPanel',myPanel]);
      2) من studio.json ← "sceneFx":["myPanel","glitch"] — الأسماء تتحوّل لدوال window بنفس الاسم
         (الدالة لازم تكون معرّفة بـcompose.html أو بملف محمّل). "sceneFx":false يفرّغ القائمة.
@@ -142,6 +166,10 @@ const R_OFF={x:350,y:1920,w:380,h:520,r:32,off:true};
 let SCENES=[{s:0,e:99,m:R_FULL}];   /* الافتراضي: ملء الشاشة طول الفيديو. تخطيط المشاهد يجي من studio.json ← scenes أو تكتبه هني لمشروعك.
                                        (تخطيط المثال القديم صار بـcompose.EXAMPLES.js ← EXAMPLE_LAYOUT) */
 const TR=0.42;
+/* 6.1 (ماجد 20 أكتوبر — «الموشن يخلص مع صوتي ويختفي على طول… أتوقع يكون له شوي حاصل»): الطلعة الهادية 0.4 ث (eio) بدل 0.2.
+   panelIn: الطلعة تخلص عند e — فحط e = آخر كلمة بجملته + 0.45 (references/motion-rules.md §3)، مو آخر كلمة حاف.
+   الملصقات والمشاهد المولّدة (e من البيانات = آخر كلمة): تقعد لين e وتطلع بعده. */
+const HOLD_OUT=0.4;
 /* الكرت المرن: يصغر نسبة وتناسب (9:16) حسب أسفل الرسم (gb) وعدد أسطر الكابشن بهاللحظة — فلا يتزاحم شي */
 const CAPH=l=>l*LH+PADY*2;
 function rDown(gb,lines){const top=gb+40+CAPH(lines)+50;return {x:0,y:top,w:1080,h:1920-top,r:0};}
@@ -152,26 +180,48 @@ function resolveScenes(){ if(_RES||!CAPS.length)return; _RES=true;
     s.m=rDown(gb,lines); }); }
 const isFull=R=>R.w>=1079&&R.h>=1919;   /* ملء الشاشة حقيقةً — لا تعتمد على r */
 function vtarget(t){ resolveScenes(); let i=SCENES.findIndex(s=>t>=s.s&&t<s.e); if(i<0)i=SCENES.length-1; return SCENES[i].m; }
-function vrect(t){
+/* المشهدان (a ← b) ونسبة الانتقال k بينهم (eio داخل نافذة TR) — المستطيل والفيديو ياخذون نفس القيم.
+   6.1: كل مشهد يقدر ياخذ مدة انتقاله الخاصة {s,e,m,tr:0.001} — رجوع فوري من «راسك برّا المستطيل» لملء الشاشة
+   تحت تكبير يغطي الشاشة (references/cut-styles.md). بلا tr = TR. */
+const scTR=sc=>(sc&&sc.tr!=null&&+sc.tr>=0)?+sc.tr:TR;
+function vtrans(t){
   resolveScenes();
   let i=SCENES.findIndex(s=>t>=s.s&&t<s.e); if(i<0)i=SCENES.length-1;
-  let a=SCENES[i].m,b=a,k=1;
-  if(t<SCENES[i].s+TR&&i>0){a=SCENES[i-1].m;b=SCENES[i].m;k=eio(pr(t,SCENES[i].s,SCENES[i].s+TR));}
+  let a=SCENES[i].m,b=a,k=1; const tr=scTR(SCENES[i]);
+  if(t<SCENES[i].s+tr&&i>0){a=SCENES[i-1].m;b=SCENES[i].m;k=eio(pr(t,SCENES[i].s,SCENES[i].s+tr));}
+  return {a,b,k};
+}
+function vrect(t){
+  const {a,b,k}=vtrans(t);
   return {x:lerp(a.x,b.x,k),y:lerp(a.y,b.y,k),w:lerp(a.w,b.w,k),h:lerp(a.h,b.h,k),r:lerp(a.r,b.r,k)};
 }
-function drawVideo(t){
-  const R=vrect(t), sw=VF.naturalWidth||1080, shh=VF.naturalHeight||1920;
-  /* ⛔ v3.8 قاعدة المستخدم: بالكرت القصّ ثابت من فوق راسه بمساحة آمنة (cardTop من 23_headcrop.py) — بلا تتبع.
-     kc: 0 = ملء الشاشة (faceAnchor) · 1 = كرت (cardTop + cardZoom) — يتدرّج مع انتقال المستطيل فما فيه قفزة */
+/* قصّ الفيديو لمستطيل: ⛔ v3.8 قاعدة المستخدم — بالكرت القصّ ثابت من فوق راسه بمساحة آمنة (cardTop من 23_headcrop.py) بلا تتبع.
+   kc: 0 = ملء الشاشة (faceAnchor) · 1 = كرت (cardTop + cardZoom) */
+function vcrop(R,sw,shh){
   const kc=CARD_TOP==null?0:cl((1919-R.h)/300,0,1), z=lerp(1,CARD_ZOOM,kc);
   const sc=Math.max(R.w/sw,R.h/shh)*z, cw=R.w/sc, ch=R.h/sc;
   const sx=(sw-cw)/2, sy0=(shh-ch)*FACE_ANCH, sy=CARD_TOP==null?sy0:lerp(sy0,cl(CARD_TOP*shh,0,shh-ch),kc);
+  return {sc,sx,sy,cw,ch};
+}
+function drawVideo(t){
+  const R=vrect(t), sw=VF.naturalWidth||1080, shh=VF.naturalHeight||1920, T=vtrans(t);
   X.save();
   if(R.r>0.5){sh(70,26,0.26);X.fillStyle='#000';rr(R.x,R.y,R.w,R.h,R.r);X.fill();nsh();}
   rr(R.x,R.y,R.w,R.h,R.r);X.clip();
-  X.drawImage(VF,sx,sy,cw,ch,R.x,R.y,R.w,R.h);
-  /* خلفية باهتة (اختيارية — 14_backdrop.py): غطاء بلون الثيم بنفس قصّ الفيديو، الشخص مستثنى بالقناع. بكل الأوضاع فالانتقال سلس */
-  if(CVR_OK){const kx=CVR.naturalWidth/sw,ky=CVR.naturalHeight/shh;X.drawImage(CVR,sx*kx,sy*ky,cw*kx,ch*ky,R.x,R.y,R.w,R.h);}
+  if(T.k<1&&T.a!==T.b&&CARD_TOP!=null){
+    /* 🎞️ انتقال ناعم (ماجد 17 أكتوبر: «أصعد وأنزل، المفروض تكون سموذ»): كان kc ينحسب من المستطيل المتحرّك، فالقصّ يقفز لفوق
+       بأول 300 بكسل من التصغير والكرت بعده ينزل ← الوجه ينزل ويطلع وينزل. الحين مكان الصورة (مقياس + إزاحة) لكل مشهد ثابت،
+       ونمزجهم بنفس تسهيل المستطيل ← كل نقطة بالصورة تمشي بخط واحد. الصورة تغطي المستطيل دايماً (كل الحدود خطية بـk). */
+    const A=vcrop(T.a,sw,shh), B=vcrop(T.b,sw,shh), sc=lerp(A.sc,B.sc,T.k);
+    const ox=lerp(T.a.x-A.sx*A.sc,T.b.x-B.sx*B.sc,T.k), oy=lerp(T.a.y-A.sy*A.sc,T.b.y-B.sy*B.sc,T.k);
+    X.drawImage(VF,ox,oy,sw*sc,shh*sc);
+    if(CVR_OK) X.drawImage(CVR,ox,oy,sw*sc,shh*sc);   /* الخلفية الباهتة بنفس التحويل */
+  } else {   /* ثابت — أو بلا cardTop (القصّ cover-fit متصل أصلاً، ما فيه قفزة): نفس الرسم القديم */
+    const c=vcrop(R,sw,shh);
+    X.drawImage(VF,c.sx,c.sy,c.cw,c.ch,R.x,R.y,R.w,R.h);
+    /* خلفية باهتة (اختيارية — 14_backdrop.py): غطاء بلون الثيم بنفس قصّ الفيديو، الشخص مستثنى بالقناع */
+    if(CVR_OK){const kx=CVR.naturalWidth/sw,ky=CVR.naturalHeight/shh;X.drawImage(CVR,c.sx*kx,c.sy*ky,c.cw*kx,c.ch*ky,R.x,R.y,R.w,R.h);}
+  }
   X.restore();
   if(R.r>0.5){X.save();X.strokeStyle=cINK(0.10);X.lineWidth=3;rr(R.x,R.y,R.w,R.h,R.r);X.stroke();X.restore();}
 }
@@ -227,7 +277,8 @@ function badge(t){
   if(LOGO.naturalWidth) X.drawImage(LOGO,x+w-p-lw,y+(h-lw)/2,lw,lw);
   X.fillStyle=INK;X.direction='ltr';X.textAlign='right';X.textBaseline='middle';X.fillText(s,x+w-p-lw-g,y+h/2+2);
   X.restore();}
-function bar(t){let a=t>VEND-0.3?1-pr(t,VEND-0.3,VEND):1;if(a<=0)return;
+function bar(t){if(!BAR)return;   /* theme.json ← bar:false = بلا شريط تقدّم */
+  let a=t>VEND-0.3?1-pr(t,VEND-0.3,VEND):1;if(a<=0)return;
   if(cutoutActive(t)||headoutActive(t))return;     /* بوضعي القصّ الشريط يشوّش — نخفيه */
   const _rb=vtarget(t), _lowb=_rb.y>700&&!_rb.off;  /* بوضع «الفيديو تحت» يرتفع الشريط فوقه · R_OFF: مكانه المعتاد */
   X.save();X.globalAlpha=a;const y=_lowb?Math.max(200,_rb.y-30):1492,h=7,mx=60;
@@ -241,15 +292,65 @@ function layout(ws){X.font='800 '+FS+'px '+FONT;
   for(const i of it){const add=c.length?i.w+GAP:i.w;
     if(cw+add>MAXW&&c.length){L.push({items:c,w:cw});c=[i];cw=i.w;}else{c.push(i);cw+=add;}}
   if(c.length)L.push({items:c,w:cw});return L;}
+/* 🆕 6.0 (ريل بوبيان): «طبقات» أو «ورا الراس» لجزء من الجملة (stack 21:1-3) — بعد ما يخلص كان الكابشن يرجع يكتب
+   الجملة كاملة فالمشاهد يقرا نفس الكلام مرتين. الحين الكابشن يكتب بس الكلمات اللي ما طلعت بالتأثير:
+   قبل التأثير = الكلمات اللي قبله · بعده = تكملة الجملة (تدخل من نهاية التأثير) · كل الجملة بالتأثير = بلا كابشن.
+   لو التأثير ما انرسم (مو ملء الشاشة بوقته، أو مطفي من الاستوديو) الكابشن يبقى كامل. */
+function _capRest(c,t){
+  if(!BEHIND||!Array.isArray(BEHIND.lines)) return c;
+  const ci=CAPS.indexOf(c);
+  const L=BEHIND.lines.find(l=>l.card===ci&&!BEHIND_OFF.includes(l.card)&&isFull(vrect(cl((l.s+l.e)/2,0,VEND))));
+  if(!L||(t>=L.s&&t<=L.e)) return c;
+  const key=w=>Number(w.s).toFixed(2)+'|'+w.t, shown=new Set((L.words||[]).map(key));
+  const rest=c.w.filter(w=>!shown.has(key(w)));
+  if(rest.length===c.w.length) return c;
+  const part=t<L.s?rest.filter(w=>w.s<L.s):rest.filter(w=>w.s>=L.s);
+  if(!part.length) return null;
+  return t<L.s?{...c,w:part,e:Math.min(c.e,L.s)}:{...c,w:part,s:Math.max(c.s,L.e)};
+}
+/* 🆕 6.1 ستايل «chunk» (ريل «1000$ بيوم» — ماجد 20 أكتوبر: «وصل مستوى ثاني»): قطع قصيرة لين 4 كلمات بسطر واحد،
+   كبسولة بلون الخلفية، والكلمة المنطوقة بلون التمييز — بلا قفز ولا تكبير (الكبسولة تطلع وتختفي بالشفافية بس).
+   القطعة تنقطع عند: 4 كلمات · سكتة أطول من 0.45 ث · مدة أطول من 2 ث · علامة ترقيم (، . ؟ !) · أو فاصل يدوي:
+     window.CHUNK_BREAK={48:[3]}  ← الجملة 48 (من صفر، ترتيب caps.json) تبدأ قطعة جديدة عند كلمتها 3 (من صفر)
+   الكبسولة تبقى لين القطعة الجاية لو بينهم أقل من 0.8 ث (الشاشة ما تفضى وترجع)، وإلا تقعد 0.45 ث بعد آخر كلمة (0.6 لآخر قطعة). theme.json ← "capStyle":"chunk".
+   مكانها: مركزها 1395 بملء الشاشة · فوق كرت الفيديو بوضع الكرت · فوق راسه بأنماط القصّ · window.CAP_Y_AT=t=>y يحدده بلحظات معيّنة. */
+const CHUNK_MAX=4, CHUNK_Y=1395;
+function _chunks(){ const out=[], BR=window.CHUNK_BREAK||{};
+  CAPS.forEach((c,ci)=>{ let cur=[]; const push=()=>{ if(cur.length){ out.push({ci,w:cur,s:cur[0].s,e:cur[cur.length-1].e}); cur=[]; } };
+    (c.w||[]).forEach((w,i)=>{ const gap=cur.length?w.s-cur[cur.length-1].e:0;
+      if(cur.length&&((BR[ci]||[]).includes(i)||cur.length>=CHUNK_MAX||gap>0.45||w.e-cur[0].s>2.0)) push();
+      cur.push(w); if(/[،.؟!]$/.test(w.t)&&cur.length>=2) push(); });
+    push(); });
+  out.forEach((a,i)=>{ const b=out[i+1]; a.end=b?(b.s-a.e<0.8?b.s:a.e+0.45):a.e+0.6; });   /* ماجد 20 أكتوبر: يقعد 0.45 ث لو بعده سكتة */
+  return out; }
+function capChunk(t){
+  const ch=_chunks().find(c=>t>=c.s-0.04&&t<c.end); if(!ch) return;
+  const r=_capRest(CAPS[ch.ci],t); if(!r) return;   /* 6.0: الكلمات اللي طلعت «ورا الراس/طبقات» ما تنعاد */
+  const keep=new Set(r.w), src=ch.w.filter(w=>keep.has(w)); if(!src.length) return;
+  const gap=16, padX=34, h=96; let fs=58, ws, total;
+  const fit=()=>{ X.font='800 '+fs+'px '+FONT; ws=src.map(w=>({w:w,ww:X.measureText(w.t).width})); total=ws.reduce((a,i)=>a+i.ww,0)+gap*(ws.length-1); };
+  fit(); if(total+padX*2>800){ fs=Math.floor(fs*(800-padX*2)/total); fit(); }   /* سطر واحد دايماً — قبل عمود أزرار انستقرام */
+  const bw=total+padX*2, R=vtarget(t), CUT=(cutoutActive(t)||headoutActive(t))&&PTOP>200;
+  let by=CUT?Math.max(260,PTOP-46-h/2):(R.y>700&&!R.off)?Math.max(260,R.y-70-h/2):CHUNK_Y;
+  if(window.CAP_Y_AT){ const yy=window.CAP_Y_AT(t); if(yy) by=yy; }
+  X.save(); X.globalAlpha=ease(pr(t,ch.s-0.04,ch.s+0.14))*(1-pr(t,ch.end-0.1,ch.end));
+  sh(30,10,0.24); X.fillStyle=cBG(0.95); rr(540-bw/2,by-h/2,bw,h,h/2); X.fill(); nsh();
+  X.textAlign='right'; X.textBaseline='middle';
+  let x=540+total/2;
+  for(const i of ws){ const said=t>=i.w.s, act=said&&t<i.w.e+0.08;
+    X.fillStyle=act?ACC:(said?INK:cINK(0.42)); X.fillText(i.w.t,x,by+3); x-=i.ww+gap; }
+  X.restore(); }
 function caption(t){
   if(SCENES.some(sc=>sc.nocap&&t>=sc.s&&t<sc.e)) return;   /* {s,e,m,nocap:true}: مشهد بلا كابشن — لما اللوحة فوق فيها النص نفسه (قرار المستخدم 8 سبتمبر) */
   /* لا تكرّر: لو الكلام يمرّ ورا الشخص بهاللحظة، كرت الكابشن يختفي */
   if(BEHIND&&PRS_OK&&isFull(vrect(t))&&BEHIND.lines.some(l=>t>=l.s&&t<=l.e&&!BEHIND_OFF.includes(l.card))) return;
   if(collageActive(t)) return;   /* الكولاج يرسم كلماته قصاصات */
-  const c=CAPS.find(c=>t>=c.s&&t<c.e); if(!c)return;
-  const lt=t-c.s,rt=c.e-t;let a=1,dy=0,sc=1;
-  if(lt<0.2){const k=lt/0.2;a=ease(k);dy=(1-ease(k))*28;sc=0.93+0.07*back(k);}
-  if(rt<0.13){const k=rt/0.13;a=k;dy=-(1-k)*10;}
+  if(CAPSTYLE==='chunk') return capChunk(t);   /* 6.1: قطع لين 4 كلمات بكبسولة (تحت الدالة فوق) */
+  let c=CAPS.find(c=>t>=c.s&&t<c.e); if(!c)return;
+  c=_capRest(c,t); if(!c) return;   /* 6.0: الكلمات اللي طلعت ورا الشخص/«طبقات» ما تنعاد بالكابشن */
+  const lt=t-c.s,rt=c.e-t;let a=1,dy=0,sc=1;   /* capStill: الدخول والطلعة بالشفافية بس — بلا صعود ولا تكبير */
+  if(lt<0.2){const k=lt/0.2;a=ease(k);if(!CAP_STILL){dy=(1-ease(k))*28;sc=0.93+0.07*back(k);}}
+  if(rt<0.13){const k=rt/0.13;a=k;if(!CAP_STILL)dy=-(1-k)*10;}
   /* ⛔ سطران بالكثير (طلب المستخدم 5 سبتمبر): الجملة الطويلة تنقسم لصفحات من سطرين، وتُعرض الصفحة اللي فيها الكلمة المنطوقة */
   let L=layout(c.w);
   if(L.length>MAXLINES){const pages=[];for(let i=0;i<L.length;i+=MAXLINES)pages.push(L.slice(i,i+MAXLINES));
@@ -260,7 +361,7 @@ function caption(t){
     const GAP2=22,MAXW2=820 /* كان 940: يدخل عمود أزرار انستقرام (x>900) بـ110px — فحص 18 سبتمبر */, isNum=w=>/^[0-9٠-٩]+$/.test(w.t);
     const wordFX=(i,k0)=>{ /* مؤثر الكلمة عند نطقها: drop · shake · type · pulse — يرجّع {ps,dx,dy,clip} */
       const r={ps:1,dx:0,dy:0,clip:1}; const sp=t>=i.s; if(!sp) return r;
-      if(i.hot){const k=Math.min(1,(t-i.s)/0.35); r.ps=1+0.10*Math.sin(k*Math.PI)+0.06*k;}
+      if(i.hot&&!CAP_STILL){const k=Math.min(1,(t-i.s)/0.35); r.ps=1+0.10*Math.sin(k*Math.PI)+0.06*k;}   /* capStill: المميزة تتلوّن بس، بلا نبض */
       const fx=i.fx; if(!fx) return r; const k=cl((t-i.s)/0.38,0,1);
       if(fx==='drop'){ const kk=cl((t-i.s)/0.34,0,1); r.dy=kk<0.72?-(1-Math.pow(kk/0.72,2))*300:-Math.sin((kk-0.72)/0.28*Math.PI)*14; }   /* جاذبية ثم ارتداد صغير */
       else if(fx==='crack'){ r.dx=Math.sin(k*46)*(1-k)*12; }
@@ -289,7 +390,7 @@ function caption(t){
       tc.globalCompositeOperation='source-in'; tc.fillStyle=color; tc.fillRect(0,0,tmp.width,tmp.height);
       X.shadowColor='rgba(0,0,0,0.75)';X.shadowBlur=22;X.shadowOffsetY=5; X.drawImage(tmp,x-tmp.width+2,y); X.restore(); return tmp.width; };   /* حافة الكلمة اليمنى ثابتة عند x والتمدد يمشي لليسار */
     const drawWord=(i,x,cy,fs)=>{ const sp=t>=i.s, act=t>=i.s&&t<i.e; const f=wordFX(i);
-      let lift=0; if(act&&!i.fx){const k=Math.min(1,(t-i.s)/0.12);lift=-6*Math.sin(k*Math.PI);}
+      let lift=0; if(act&&!i.fx&&!CAP_STILL){const k=Math.min(1,(t-i.s)/0.12);lift=-6*Math.sin(k*Math.PI);}
       if(f.stretch!==undefined&&f.stretch<1&&_pts(i.t).length){ /* تمدد: الكلمة تبقى بمكانها، ونسختها الذهبية تتمدد بالكشيدة فوق الكابشن كبطلة — فقط لو فيها موضع كشيدة صالح */
         X.save(); X.font='900 '+Math.round(fs*1.35)+'px '+FONT; const bw=X.measureText(i.t).width; X.globalAlpha=Math.min(1,f.stretch*6,(1-f.stretch)*6);
         stretchWord({...i,w:bw},540+bw/2+60,cy-fs*2.1,Math.round(fs*1.35),f.stretch,ACC); X.restore(); }
@@ -311,7 +412,8 @@ function caption(t){
       const wv={...cur,w:X.measureText(cur.t).width}; const k=ease(Math.min(1,(t-cur.s)/0.18));
       const _Rb=vtarget(t), _yb=(_Rb.y>700&&!_Rb.off)?Math.max(260,_Rb.y-120):1200;   /* 23 سبتمبر: ما يطيح على وجهه بوضع الكرت */
       X.save(); X.globalAlpha=a*k; X.textAlign='right'; X.textBaseline='middle';
-      X.translate(540,_yb); X.scale(0.85+0.15*k,0.85+0.15*k); X.translate(-540,-_yb);
+      const bs=CAP_STILL?1:0.85+0.15*k;   /* capStill: الكلمة الضخمة تطلع بالشفافية بس */
+      X.translate(540,_yb); X.scale(bs,bs); X.translate(-540,-_yb);
       drawWord(wv,540+wv.w/2,_yb,fs); X.restore(); return; }
     let FS2=84, LL=null; const src=CAPSTYLE==='type'?c.w.filter(w=>t>=w.s):c.w;
     if(!src.length) return;
@@ -344,7 +446,7 @@ function caption(t){
   X.font='800 '+FS+'px '+FONT;X.textAlign='right';X.textBaseline='middle';
   L.forEach((ln,li)=>{let x=540+ln.w/2;const cy=by+PADY+LH*li+LH/2;
     for(const i of ln.items){const act=t>=i.s&&t<i.e,sp=t>=i.s;let lift=0;
-      if(act){const k=Math.min(1,(t-i.s)/0.1);lift=-5*Math.sin(k*Math.PI);}
+      if(act&&!CAP_STILL){const k=Math.min(1,(t-i.s)/0.1);lift=-5*Math.sin(k*Math.PI);}   /* capStill: تتلوّن بمكانها بلا قفزة */
       if(i.hot&&sp){const k=Math.min(1,(t-i.s)/0.16),gw=(i.w+28)*ease(k),gh=FS+21;
         X.fillStyle=ACC;rr(x+14-gw,cy-gh/2+lift,gw,gh,15);X.fill();X.fillStyle=onACC();}
       else X.fillStyle=act?ACC:INK;
@@ -505,7 +607,10 @@ function _behindLine(t){ if(!BEHIND||!PRS_OK||!Array.isArray(BEHIND.lines)) retu
    فالمسند ينرسم تحت الحروف مو فوقها.
    الألوان: theme.json ← stack:{fill:'#FFFFFF', shade:'#000000', accent:false|true (الكلمة الفوقية بلون ACC),
    font:null (= خط الثيم), weight:900, maxBehind:2} — الافتراضي أبيض/أسود محايد، مو هوية أحد. */
-let STK={fill:'#FFFFFF',shade:'#000000',accent:false,font:null,weight:900,maxBehind:2};
+let STK={fill:'#FFFFFF',shade:'#000000',accent:false,font:null,weight:900,maxBehind:2,above:1};
+/* 🆕 6.0 ترتيب الكلمات: theme.json ← stack:{above:2, behind:1} = أول كلمتين فوق الراس (فوق بعض) وكلمة وحدة ورا الراس
+   تبدأ من قمته (الكشيدة بس تمرّ وراه) — مثل «بنك / بوبيان / يشتغل» بريل بوبيان. behind = نفس maxBehind. الافتراضي above:1. */
+const _stkB=()=>Math.max(0,(STK.behind!==undefined?+STK.behind:+STK.maxBehind)||0), _stkA=()=>Math.max(1,+STK.above||1);
 const STK_M=44, STK_TOP=170, STK_THR=13;   /* هامش الحواف · أعلى نص (حزام انستقرام فوق) · عتبة قناع الجمع (5٪ من الفريمات) */
 const STK_FBOT=1490, STK_FBOT2=1600;        /* آخر حد للنص القدّامي: فوق حزام الأسفل الحذر (1500) · وبالضيق داخل الحزام (المنطقة الممنوعة من 1620) */
 const STK_BMIN=64;                          /* أصغر خط للكلمات اللي ورا الراس (اللقطة القريبة تحتاج خط أصغر عشان الحروف تدخل على الجانبين) */
@@ -627,7 +732,7 @@ function _stkLayout(L){ if(L._lay!==undefined) return L._lay;
     let pick=null;
     for(let fs=fs0; fs>=STK_BMIN; fs=Math.round(fs*0.93)){
       const gapV=Math.round(fs*0.15), items=[]; let y=null, nb=0;   /* 0.15: بين سطرين ورا الراس فراغ يبان (0.07 كان يلزقهم) */
-      for(let i=nAbove;i<ws.length&&nb<STK.maxBehind;i++){
+      for(let i=nAbove;i<ws.length&&nb<_stkB()+_stkA()-1;i++){
         const w=ws[i].t, pts=_pts(w); if(!pts.length) break;          /* بلا موضع كشيدة (ورا، دار…) → تنزل قدّام */
         const G0=_skGlyph(w,fs,pts[0]), hI=G0.iB-G0.iT;
         const top=y===null?Math.max(P.top+hI*0.08,STK_TOP+hI*1.1):y+gapV, bot=top+hI;   /* أول سطر يبدأ عند قمة الراس (مثل المرجع) — الكشيدة تمرّ على الجبهة/العيون */
@@ -636,7 +741,7 @@ function _stkLayout(L){ if(L._lay!==undefined) return L._lay;
         const G=_skFit(w,fs,span,STK_M,xr,gap); if(!G) break;
         items.push({w:ws[i],G,top,span,gap,xl:STK_M,xr,fs}); y=top+(G.iB-G.iT); nb++;
       }
-      const want=Math.min(STK.maxBehind,ws.length-nAbove);
+      const want=Math.min(_stkB()+_stkA()-1,ws.length-nAbove);
       if(!pick||nb>pick.items.length) pick={fs,items};
       if(nb>=want) break;
     }
@@ -689,8 +794,21 @@ function _stkLayout(L){ if(L._lay!==undefined) return L._lay;
   };
   let lay=tryLay(ws.length>1?1:0); if(!lay) lay=tryLay(0);
   if(lay&&!lay.above&&!lay.behind.length) lay=null;              /* ولا كلمة ورا ولا فوق = مو «طبقات» */
+  lay=_stkRestack(L,lay,P);                                      /* 6.0: above>1 ← كلمات «ورا» الأولى تطلع فوق الراس */
   if(!_stkFontOK()) return lay||null;                            /* الخط ما اكتمل — لا تحفظ، أعد الحساب بالفريم الجاي */
   return (L._lay=lay||null); }
+/* 6.0: above>1 — نفس فكرة لفّة بوبيان (_stkLayout): أول (above-1) من سطور «ورا» تنرفع فوق الراس بعرض الشاشة (فوق بعض)،
+   والباقي ورا الراس يبدأ من قمته. يصغّر الكل لين أعلى سطر يدخل تحت حزام انستقرام فوق (STK_TOP). */
+function _stkBest(w,fs){ let G=null,bd=1e9; for(const pt of _pts(w)){ const g=_skGlyph(w,fs,pt); if(!g.stretch) continue; const d=Math.abs(g.rw-g.lw); if(d<bd){bd=d;G=g;} } return G||_skGlyph(w,fs,null); }
+function _stkRestack(L,Y,P){
+  const k=Math.min(_stkA()-1,Y&&Y.behind?Y.behind.length:0); if(!Y||!Y.above||k<1||!P) return Y;
+  const up=Y.behind.slice(0,k), stay=Y.behind.slice(k), A=Y.above, h=it=>it.G.iB-it.G.iT;
+  const place=()=>{ let cur=P.top-18; for(let j=up.length-1;j>=0;j--){ up[j].top=cur-h(up[j]); cur=up[j].top-Math.round(up[j].fs*0.10); } A.top=cur-h(A); return A.top; };
+  for(let n=0;n<8&&place()<STK_TOP;n++) for(const it of [A,...up]){ it.fs=Math.round(it.fs*0.93); it.G=_stkBest(it.w.t,it.fs); }
+  for(const it of up){ it.span=null; }
+  if(stay.length){ stay[0].top=P.top+14; stay[0].span=_pspan(P,stay[0].top,stay[0].top+h(stay[0]))||stay[0].span;
+    for(let j=1;j<stay.length;j++){ stay[j].top=stay[j-1].top+h(stay[j-1])+Math.round(stay[j].fs*0.15); stay[j].span=_pspan(P,stay[j].top,stay[j].top+h(stay[j]))||stay[j].span; } }
+  Y.aboveMore=up; Y.behind=stay; return Y; }
 function stackText(t,L){
   const Y=_stkLayout(L); if(!Y) return false;
   const fo=t>L.e-0.10?cl((L.e-t)/0.10,0,1):1;                      /* خروج ناعم بآخر الجملة */
@@ -703,6 +821,7 @@ function stackText(t,L){
     const cv=_skBuild(G,(xr-xl)-G.rw-G.lw);
     _skPaint(cv,xl-G.iL,it.top-G.iT,it.fs,a,it.fill); };
   if(Y.above){ Y.above.fill=STK.accent?ACC:STK.fill; wide(Y.above); }
+  for(const it of (Y.aboveMore||[])){ it.fill=STK.fill; wide(it); }   /* 6.0: كلمات فوق الراس الإضافية (above>1) */
   for(const it of Y.behind){ it.fill=STK.fill; wide(it); }
   /* الشخص فوق الطبقتين الأوليين — من فوق الراس لين الرقبة بعمود الراس بس (مسند الكرسي/اللي لاصق فيه ينرسم تحت الحروف) */
   const hd=_stkHead(L);
@@ -747,7 +866,7 @@ function headOut(t){
   const R=vrect(t);
   /* أثناء تقلّص الكرت: نحسب الوضع على الكرت النهائي ونتدرّج إليه من ملء الشاشة بنفس إيقاع الكرت — فالراس فوق الحافة من أول فريم */
   resolveScenes(); let si=SCENES.findIndex(sn=>t>=sn.s&&t<sn.e); if(si<0)si=SCENES.length-1;
-  const Rt=SCENES[si].m, kt=(si>0&&t<SCENES[si].s+TR)?eio(pr(t,SCENES[si].s,SCENES[si].s+TR)):1;
+  const trs=scTR(SCENES[si]), Rt=SCENES[si].m, kt=(si>0&&t<SCENES[si].s+trs)?eio(pr(t,SCENES[si].s,SCENES[si].s+trs)):1;
   const ph=Math.max(1,B.y1-B.y0), cx=(B.x0+B.x1)/2;
   const cover=Math.max(Rt.w/W,Rt.h/H);                  /* لا تصغّر تحت ما يملأ الكرت */
   const sc1=Math.max(cover,Math.min(2.2,(Rt.h*1.20)/ph));
@@ -821,7 +940,7 @@ function brCard(k,dt,sp,a,s0,s1){const im=brFrame(k,dt,sp);if(!im)return;
   X.drawImage(im,BRCROP.sx,BRCROP.sy,BRCROP.sw,BRCROP.sh,BRC.x,BRC.y,BRC.w,BRC.h);X.restore();
   X.strokeStyle=cINK(0.14);X.lineWidth=3;rr(BRC.x,BRC.y,BRC.w,BRC.h,BRC.r);X.stroke();X.restore();}
 /* ---------- لوحة فوق الوجه بوضع R_DOWN: ارسم اللوحة بإحداثيات 130..950 × 278..458 وهي تتكبّر 1.2 وحدها ---------- */
-function panelIn(t,s,e,fn){ if(t<s+TR-0.1||t>e)return; const k=ease(pr(t,s+TR-0.1,s+TR+0.25)), out=1-pr(t,e-0.2,e);
+function panelIn(t,s,e,fn){ if(t<s+TR-0.1||t>e)return; const k=ease(pr(t,s+TR-0.1,s+TR+0.25)), out=1-eio(pr(t,e-HOLD_OUT,e));   /* 6.1: طلعة 0.4 تخلص عند e (المشاهد تحرس t>e) */
   X.save();X.globalAlpha*=k*out;X.translate(540,368+(1-k)*22);X.scale(1.2,1.2);X.translate(-540,-368);fn(t);X.restore();}
 /* ملاحظة: اللوحة تبدأ بعد TR (0.42ث) — تنتظر الفيديو يخلص نزوله حتى ما ترتسم فوق وجهه */
 
@@ -879,16 +998,16 @@ function preloadGen(){ const ps=[];
   return Promise.all(ps); }
 function genImg(g,t){ const a=GENI[g.k]; if(!a) return null; const n=a.imgs.length; if(n===1) return a.imgs[0].naturalWidth?a.imgs[0]:null;
   const i=cl(Math.floor((t-g.s)*30),0,n-1); const im=a.imgs[i]; return im&&im.naturalWidth?im:null; }
-function genActive(t,modes){ resolveGen(); return GEN.filter(g=>t>=g.s&&t<g.e&&modes.includes(g.mode||'card')); }
+function genActive(t,modes){ resolveGen(); return GEN.filter(g=>t>=g.s&&t<g.e+HOLD_OUT&&modes.includes(g.mode||'card')); }   /* 6.1: + الطلعة الهادية بعد e */
 /* رسم الصورة داخل مستطيل بقصّ «تغطية» مع كن-بيرنز */
 function genDrawImg(g,im,t,x,y,w,h){ const k=g.kb?pr(t,g.s,g.e):0, sc=1+0.08*k, s0=Math.max(w/im.naturalWidth,h/im.naturalHeight)*sc;
   const dw=im.naturalWidth*s0, dh=im.naturalHeight*s0; X.drawImage(im, x+(w-dw)/2+(-14*k), y+(h-dh)/2+(-10*k), dw, dh); }
 function genBg(t){ for(const g of genActive(t,['bg'])){ const im=genImg(g,t); if(!im) continue;
-    const k=ease(pr(t,g.s,g.s+0.35)), ko=1-pr(t,g.e-0.3,g.e); X.save(); X.globalAlpha=k*ko; genDrawImg(g,im,t,0,0,W,H);
+    const k=ease(pr(t,g.s,g.s+0.35)), ko=1-eio(pr(t,g.e,g.e+HOLD_OUT)); X.save(); X.globalAlpha=k*ko; genDrawImg(g,im,t,0,0,W,H);
     /* تعتيم خفيف من تحت حتى الكرت الصغير والكابشن يطلعان */ const gr=X.createLinearGradient(0,H*0.45,0,H); gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(0.55,'rgba(0,0,0,0.45)'); gr.addColorStop(1,'rgba(0,0,0,0.72)'); X.fillStyle=gr; X.fillRect(0,0,W,H);
     genOps(g,t,{x:0,y:0,w:W,h:H*0.62}); X.restore(); } }
 function genCard(t){ for(const g of genActive(t,['card','full'])){ const im=genImg(g,t); if(!im) continue;
-    const k=ease(pr(t,g.s,g.s+0.3)), ko=1-pr(t,g.e-0.25,g.e); X.save(); X.globalAlpha=k*ko;
+    const k=ease(pr(t,g.s,g.s+0.3)), ko=1-eio(pr(t,g.e,g.e+HOLD_OUT)); X.save(); X.globalAlpha=k*ko;
     if(g.mode==='full'){ genDrawImg(g,im,t,0,0,W,H); genOps(g,t,{x:0,y:150,w:W,h:1330}); }
     else { const R=g.rect||GCARD; const sc=lerp(0.94,1,back(k)); X.translate(R.x+R.w/2,R.y+R.h/2); X.scale(sc,sc); X.translate(-(R.x+R.w/2),-(R.y+R.h/2));
       sh(60,24,0.30); X.fillStyle='#000'; rr(R.x,R.y,R.w,R.h,R.r); X.fill(); nsh(); X.save(); rr(R.x,R.y,R.w,R.h,R.r); X.clip(); genDrawImg(g,im,t,R.x,R.y,R.w,R.h); X.restore();
@@ -925,8 +1044,8 @@ function collageScene(t){
   X.restore(); }
 /* 🏷️ ملصقات فوق الراس (عامة — تُضاف من استوديو الجوال أو يدوياً بـSTICK): {s,e,i:'🎂',t:'5 سنوات',y?} كبسولة غامقة بحافة التمييز تنبثق وتطفو */
 function stickers(t){
-  for(const st of STICK){ if(t<st.s||t>st.e) continue;
-    const k=ease(pr(t,st.s,st.s+0.32)), out=1-pr(t,st.e-0.22,st.e); const a=k*out; if(a<=0) continue;
+  for(const st of STICK){ if(t<st.s||t>st.e+HOLD_OUT) continue;   /* 6.1: تقعد لين e وتطلع بهدوء بعده */
+    const k=ease(pr(t,st.s,st.s+0.32)), out=1-eio(pr(t,st.e,st.e+HOLD_OUT)); const a=k*out; if(a<=0) continue;
     const sc=(0.6+0.4*back(k))*(0.96+0.04*out), fl=Math.sin((t-st.s)*2.2)*7;
     X.save(); X.globalAlpha=a; X.font='800 74px '+FONT; const tw=X.measureText(st.t||'').width;
     const hasI=!!st.i, bw=tw+72+(hasI?130:40), bh=130, cx=540, cy=(st.y||300)+fl;
@@ -995,8 +1114,12 @@ function draw(t){
   if(t<VEND) safe(brollClips,t,'brollClips');
   if(t<VEND) safe(genCard,t,'genCard');   /* 🖼️ v3.2: صورة/مقطع مولّد بكرت فوق + رسم فوقه (وضع card/full) */
   badge(t);bar(t); if(t<VEND) safe(stickers,t,'stickers');
-  for(const sc of SCENE_LIST) if((sc[2]||sc[1].layer)!=='video') safe(sc[1],t,sc[0]);   /* مشاهد المشروع — فاضية افتراضياً (شوف SCENE_LIST فوق) */
+  for(const sc of SCENE_LIST) if(!['video','afterPerson'].includes(sc[2]||sc[1].layer)) safe(sc[1],t,sc[0]);   /* مشاهد المشروع — فاضية افتراضياً (شوف SCENE_LIST فوق) */
   if(_cut) safe(personStage,t,'cutout');   /* هو قدام اللوحة */
+  /* 🆕 6.0 طبقة فوق الشخص: بوضع القصّ (cutout) الشخص ينرسم فوق كل المشاهد فيغطي نصها. أي دالة بـwindow.AFTER_PERSON
+     (أو مشهد مسجّل بطبقة 'afterPerson') تنرسم بعده — للنص اللي لازم يبين قدّامه. تشتغل بكل الأوضاع، مو بس القصّ. */
+  if(window.AFTER_PERSON) for(const f of window.AFTER_PERSON) safe(f,t,'afterPerson');
+  for(const sc of SCENE_LIST) if((sc[2]||sc[1].layer)==='afterPerson') safe(sc[1],t,sc[0]);
   safe(caption,t,'caption'); safe(outro,t,'outro');
 }
 window.draw=draw;window.init=init;window.vrect=vrect;
@@ -1006,5 +1129,5 @@ window.shot=q=>document.getElementById('cv').toDataURL('image/jpeg',q);
 </script>
 <!-- 🎞️ معرض الحركات (references/moves.md §3): FX.<id>(MV, t, o) داخل مشاهدك — FX من motion/moves.js، وMV (أدوات النص والتوقيت والثيم) من moves-compose.js.
      04_render_frames.js و08_safe_check.js ينسخونهم للمجلد لو ناقصين. مشاهدك تحتهم (بعد هالسطر). -->
-<script src="moves.js"></script><script src="moves-compose.js"></script>
+<script src="styles.js"></script><script src="moves.js"></script><script src="moves-compose.js"></script>
 </body></html>

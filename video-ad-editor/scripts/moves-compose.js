@@ -1,3 +1,12 @@
+/* خط الرقعة (Aref Ruqaa) يرسم التاء المربوطة المنفصلة بلا نقطتين («الخطوة» تنقرا «الخطوه»).
+   الحل: حرف ربط خفي (ZWJ) قبل «ة» اللي بعد حرف ما يتصل بعده — تطلع بشكلها الأخير بنقطتيها. ينطبق على أي رسم بهالخط. */
+(function () {
+  const P = (typeof CanvasRenderingContext2D !== 'undefined') && CanvasRenderingContext2D.prototype;
+  if (!P || P.__ruqaaFix) return; P.__ruqaaFix = true;
+  const fix = (s) => String(s).replace(/(?<=^|[\s\u0640اأإآٱدذرزوؤءة]|[اأإآٱدذرزوؤءة][\u064B-\u065F]+)ة/gu, '\u200Dة');
+  const wrap = (name) => { const f = P[name]; P[name] = function (s, ...a) { return f.call(this, /Aref Ruqaa/.test(this.font) ? fix(s) : s, ...a); }; };
+  ['fillText', 'strokeText', 'measureText'].forEach(wrap);
+})();
 /* ═══ moves-compose.js — يشغّل حركات المعرض (motion/moves.js → FX) داخل ريل الكلام (compose.html) ═══
    FX مكتوبة لمحرّك الموشن وتطلب ctx فيه أدوات نص وتوقيت. هالملف يبني نفس الـctx فوق كانفس compose وثيمه وكلماته:
      window.MV = ctx  →  FX.<id>(MV, t, o)
@@ -9,6 +18,11 @@
    أدوات compose:
      MV.video(Y, R?)        يرسم فريم الفيديو الحالي على Y بمستطيل R (افتراضي ملء الشاشة) — للانتقالات وpushIn
      MV.person(Y, R?)       المتحدث مقصوص لهالفريم (ماك: 11_behind_text.js person) — MV.person.ok() يقول موجود ولا
+     MV.env(t)              علو صوته الحقيقي 0..1 (env.js من scripts/37_env.py) — موجة/نبض يتحرك مع كلامه
+     MV.frameAt(Y, t, R?) / MV.personAt(Y, t, R?)  الفريم/القصّ بوقت ثاني (تجميد 65) — 04_render_frames ينتظر MV.settle() قبل اللقطة
+     MV.faceAt(t)           مستطيل الوجه والفم عند t (face.js من 36_facetrack.py — ماك) أو null — للحركات 85 و86: face: MV.faceAt
+     MV.palmAt(t)           الكف عند t (palm.js من 29_handtrack.py — ماك) أو null — للحركة 91: palm: MV.palmAt
+     MV.needFont(fam)       يحمّل خط إضافي من مجلد الشغل ('Amiri Quran' للآية 74) — true لو جاهز
      MV.panel(Y, fn?)       يعبّي Y بلون الخلفية ثم fn(Y) — مشهد B جاهز للانتقال
      MV.hideCaption(s, e)   يطفي كابشن المحرّك بنافذة (لما FX.caption يرسم الكابشن بداله)
      MV.scene(name, fn, layer?)  = SCENE_LIST.push بنفس safe() — fn(t) تُنادى كل فريم
@@ -67,11 +81,17 @@
   function fontStr(family = 'body', weight = 700, size = 80) {
     const role = ALIAS[family];
     if (!role) return `${weight} ${size}px "${family}"`;           // عائلة مو معروفة: نمرّرها كما هي
+    if (STY && STY.fonts[role]) return `${weight} ${size}px "${STY.fonts[role]}"`;
     const w = role === 'display' ? Math.max(800, +weight || 0) : weight;
     return `${w} ${size}px "${theme().FONT}"`;
   }
   const applyFont = (X, o) => { X.font = o.font || fontStr(o.family || 'body', o.weight ?? 700, o.size || 80); };
+  let STY = null;   // 🎨 MV.useStyle(spec) — ستايل من motion/styles.js (ألوانه وخطوطه تغلب ثيم compose)
   const PAL = () => {
+    if (STY) return Object.assign(PAL0(), STY.P, { onAcc: '#FFFFFF' });
+    return PAL0();
+  };
+  const PAL0 = () => {
     /* let globals بـcompose ما تبين على window بس تنقرا بالاسم (نفس النطاق العام) — typeof يحمي لو الصفحة مو compose */
     const acc = typeof ACC !== 'undefined' ? ACC : '#D97757', clay = typeof CLAY !== 'undefined' ? CLAY : acc;
     return { bg: typeof BG !== 'undefined' ? BG : '#F3EFEA', ink: typeof INK !== 'undefined' ? INK : '#1F1F1D', acc, clay, hi: clay, mut: typeof MUT !== 'undefined' ? MUT : '#8A847A',
@@ -158,7 +178,7 @@
         if (st.clip || st.reveal != null || st.clipUp != null) {
           X.beginPath();
           if (st.reveal != null) { const rw = (box.w + 20) * clamp(st.reveal); X.rect(box.x + box.w + 10 - rw, box.y - L.size * .3, rw, box.h + L.size * .6); }
-          else if (st.clipUp != null) X.rect(box.x - 20, box.y - L.size * .3, box.w + 40, box.h + L.size * .3);
+          else if (st.clipUp != null) { const ext = L.size * .75 * Math.max(0, Math.min(1, 1 - (st.dy || 0) / (L.size * .6))); X.rect(box.x - 20, box.y - L.size * .3, box.w + 40, box.h + L.size * .3 + ext); }   // وهي طالعة: القناع على السطر (طلعة نظيفة). لما توصل: ينزل تحت السطر فتكمل ذيول ج ي ع ونقاط الياء بلا حد ينشاف
           else X.rect(st.clip.x, st.clip.y, st.clip.w, st.clip.h);
           X.clip();
         }
@@ -247,6 +267,70 @@
     Y.drawImage(PI, (sw - cw) / 2, (shh - ch) * fa, cw, ch, R.x, R.y, R.w, R.h); return true;
   }
   person.ok = () => { const PI = document.getElementById('PRS'); return typeof PRS_OK !== 'undefined' && !!PRS_OK && !!PI && PI.naturalWidth > 0; };
+  /* فريم بوقت ثاني (62–73: ستيكر 65): MV.frameAt(Y, t, R?) = فريم الفيديو عند t (vfr/NNNNN.jpg) · MV.personAt(Y, t, R?) = القصّ عند t (bt/person/NNNNN.png).
+     يرجّعون true لو رسموا. أول طلب يحمّل الصورة؛ 04_render_frames.js ينتظر MV.settle() ويعيد رسم الفريم، فالنتيجة حتمية بأي ترتيب رسم.
+     MV.personAt.ok(t) = القصّ موجود لهالوقت (11_behind_text.js person لازم يغطي t). */
+  const HELD = new Map();
+  function held(kind, t) {
+    const fps = (typeof FPS === 'number' && FPS) || 30, i = Math.max(1, Math.round(t * fps) + 1), id = String(i).padStart(5, '0'), src = (kind === 'v' ? 'vfr/' : 'bt/person/') + id + (kind === 'v' ? '.jpg' : '.png');
+    let h = HELD.get(src); if (h) return h;
+    const im = new Image(); h = { im, ok: false, bad: false };
+    h.p = new Promise(res => { im.onload = () => { h.ok = true; res(); }; im.onerror = () => { h.bad = true; res(); }; }); im.src = src; HELD.set(src, h); return h;
+  }
+  function drawHeld(Y, im, R) { R = R || { x: 0, y: 0, w: 1080, h: 1920 }; const sw = im.naturalWidth, shh = im.naturalHeight, sc = Math.max(R.w / sw, R.h / shh), cw = R.w / sc, ch = R.h / sc;
+    const fa = typeof FACE_ANCH === 'number' ? FACE_ANCH : 0.3; Y.drawImage(im, (sw - cw) / 2, (shh - ch) * fa, cw, ch, R.x, R.y, R.w, R.h); }
+  /* 6.0: فحص المنطقة الآمنة (08_safe_check.js) يحط window.__SAFE_FLAT = بكسل مسطّح — فالفريم المجمّد يرسم نفس لون الفيديو المبدّل
+     (ينحسب فيديو مو «رسمك»)، والقصّ بوقت ثاني ما يرسم شي (نفس MV.person بالفحص). قبلها الانتقالات من vfr تعطي إنذار كاذب. */
+  function frameAt(Y, t, R) { if (G.__SAFE_FLAT) { drawHeld(Y, G.__SAFE_FLAT, R); return true; } const h = held('v', t); if (!h.ok) return false; drawHeld(Y, h.im, R); return true; }
+  function personAt(Y, t, R) { if (G.__SAFE_FLAT) return true; const h = held('p', t); if (!h.ok) return false; drawHeld(Y, h.im, R); return true; }
+  personAt.ok = t => { const h = held('p', t); return h.ok || !h.bad; };   // لسا يتحمّل = نفترض موجود (settle يحسمها قبل اللقطة)
+  /* 🧊 طبقة 3D (41_logo3d.js): فريمات PNG شفافة بـthree/<name>/ ترسم فوق المونتاج — MV.overlay('logos', Y, t, R?)
+     يرجّع true لو رسم. تحميل الفريم نفس HELD فـsettle() ينتظره (الرسم حتمي). R = مستطيل بإحداثيات الكانفس (افتراضي مقاسها من 0,0). */
+  const OVL = new Map();
+  function overlayMeta(name) {
+    if (OVL.has(name)) return OVL.get(name); let m = null;
+    try { const x = new XMLHttpRequest(); x.open('GET', 'three/' + name + '/meta.json', false); x.send(); if (x.status === 200 || (x.status === 0 && x.responseText)) m = JSON.parse(x.responseText); } catch (e) {}
+    OVL.set(name, m); return m;
+  }
+  function overlay(name, Y, t, R) {
+    const m = overlayMeta(name); if (!m) return false;
+    const i = Math.floor((t - m.from) * m.fps + 1e-6); if (i < 0 || i >= m.n) return false;
+    const src = 'three/' + name + '/' + String(i + 1).padStart(5, '0') + '.png';
+    let h = HELD.get(src);
+    if (!h) { const im = new Image(); h = { im, ok: false, bad: false }; h.p = new Promise(res => { im.onload = () => { h.ok = true; res(); }; im.onerror = () => { h.bad = true; res(); }; }); im.src = src; HELD.set(src, h); }
+    if (!h.ok) return false;
+    R = R || { x: 0, y: 0, w: m.size[0], h: m.size[1] }; Y.drawImage(h.im, R.x, R.y, R.w, R.h); return true;
+  }
+  overlay.meta = overlayMeta;
+  /* خط إضافي بالطلب (74 آية بسكينة: 'Amiri Quran'): MV.needFont(fam) يرجّع true لو جاهز، وإلا يبدأ التحميل من مجلد الشغل
+     (04_render_frames.js و08_safe_check.js ينسخون AmiriQuran-Regular.ttf من motion/fonts لما compose.html فيه ayahCalm) ويرجّع false —
+     الحركة تتخطى الرسم، وsettle() تنتظر الخط وتعيد الفريم. */
+  const FONTREQ = { 'Amiri Quran': 'AmiriQuran-Regular.ttf' }, FONTS = new Map();
+  function needFont(fam) {
+    let h = FONTS.get(fam); if (h) return h.ok;
+    h = { ok: false, bad: false }; FONTS.set(fam, h);
+    try { if ([...document.fonts].some(f => f.family.replace(/["']/g, '') === fam && f.status === 'loaded')) { h.ok = true; h.p = Promise.resolve(); return true; } } catch (e) {}
+    const files = FONTREQ[fam] ? [[FONTREQ[fam], '400']] : ((G.STYLES && G.STYLES.FONT_FILES[fam]) || []);
+    if (!files.length) { h.bad = true; h.p = Promise.resolve(); return false; }
+    h.p = Promise.all(files.map(([file, weight]) => new FontFace(fam, 'url("' + file + '")', { weight, style: 'normal' }).load().then(f => document.fonts.add(f))))
+      .then(() => { h.ok = true; }, () => { h.bad = true; console.error('⚠️ MV.needFont: ما لقيت ' + files.map(x => x[0]).join(' ') + ' بمجلد الشغل (انسخه من motion/fonts)'); });
+    return false;
+  }
+  /* 🆕 6.0 موجة صوته: MV.env(t) = علو صوته الحقيقي عند t (0..1) من env.js (scripts/37_env.py). بلا env.js = 0 */
+  function env(t) { const E = G.ENV; if (!E || !E.length) return 0; const i = Math.round(t * 30); return E[Math.max(0, Math.min(E.length - 1, i))] || 0; }
+  const pending = () => [...HELD.values(), ...FONTS.values()].filter(h => !h.ok && !h.bad).length;
+  const settle = () => Promise.all([...HELD.values(), ...FONTS.values()].map(h => h.p));
+  /* الكف (91 بكفّك): palm.js من scripts/29_handtrack.py يعرّف window.palmAt(t) → {x,y,c} أو null. MV.palmAt نفسها بأمان (null بلا palm.js). */
+  function palmAt(t) { return typeof G.palmAt === 'function' ? G.palmAt(t) : null; }
+  /* الوجه بوقت t (75–87: فقاعة 85 · كاميرا ثانية 86): من face.js (scripts/36_facetrack.py — ماك) بنفس تأطير MV.video.
+     يرجّع {x,y,w,h,mx,my} بإحداثيات الكانفس (mx,my = الفم تقريباً) أو null (بلا face.js أو برّا المدى → الحركة ترجع لمكانها الافتراضي). */
+  function faceAt(t) {
+    const F = G.FACE; if (!F || !F.pts || !F.pts.length || t < F.from - 0.05 || t > F.to + 0.05) return null;
+    const p = F.pts[Math.min(F.pts.length - 1, Math.max(0, Math.round((t - F.from) * F.fps)))], sw = F.sw, shh = F.sh;
+    const sc = Math.max(1080 / sw, 1920 / shh), cw = 1080 / sc, ch = 1920 / sc, fa = typeof FACE_ANCH === 'number' ? FACE_ANCH : 0.3, ox = (sw - cw) / 2, oy = (shh - ch) * fa;
+    const x = (p[1] * sw - ox) * sc, y = (p[2] * shh - oy) * sc, w = p[3] * sw * sc, h = p[4] * shh * sc;
+    return { x, y, w, h, mx: x + w / 2, my: y + h * 0.78 };
+  }
   function panel(Y, fn) { Y.save(); Y.fillStyle = PAL().bg; Y.fillRect(0, 0, 1080, 1920); Y.restore(); if (fn) { Y.save(); fn(Y); Y.restore(); } }
   const HIDE = [];
   function hideCaption(s, e) {
@@ -263,6 +347,15 @@
     G.init = function (d) { const r = orig.apply(this, arguments); inited = true; READY.splice(0).forEach(f => { try { f(); } catch (e) { console.error('⚠️ MV.ready: ' + e.message); } }); return r; };
     G.init.__mv = true;
   }
+  /* 🎨 بنك الستايلات (references/styles.md): MV.useStyle('paperCut') أو 'explainer+keynote' — مرة وحدة فوق مشاهدك.
+     يرجّع S (= MV.S): S.background/card/label/post/sig… وألوان MV.P وخطوط display/body/num تصير من الستايل. useStyle(null) يرجع لثيم compose. */
+  function useStyle(spec) {
+    if (!spec) { STY = null; return null; }
+    if (!G.STYLES) { console.error('⚠️ MV.useStyle: styles.js مو محمّل (compose.html لازم فيه <script src="styles.js">)'); return null; }
+    const brand = PAL0(); STY = G.STYLES.make(spec, { W: 1080, H: 1920, fps: 30, brand });
+    Object.values(STY.fonts).forEach(f => { if (G.STYLES.FONT_FILES[f]) needFont(f); });
+    return STY;
+  }
   function scene(name, fn, layer) { if (typeof SCENE_LIST === 'undefined') throw new Error('MV.scene: هالصفحة مو compose'); if (layer) fn.layer = layer; SCENE_LIST.push([name, fn, layer]); }
 
   const MV = {
@@ -276,6 +369,8 @@
     num: (v, d = 0) => westernDigits(Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })),
     drawPath, pathInfo,
     video, person, panel, hideCaption, scene, ready,
+    frameAt, personAt, pending, settle, faceAt, needFont, palmAt, env, overlay,
+    useStyle, get S() { return STY; },
   };
   G.MV = MV;
 })();
